@@ -55,6 +55,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -148,10 +149,12 @@ USE_TZ = True
 
 # STATIC FILES
 STATIC_URL = '/static/'  # Add the leading and trailing slash
-STATIC_ROOT = BASE_DIR / 'staticfiles'  # Correct variable name: STATIC_ROOT
+STATIC_ROOT = BASE_DIR / 'staticfiles'  # Where collectstatic will collect static files for production
 STATICFILES_DIRS = [
-    BASE_DIR / 'static',  # Your project-level static files
+    BASE_DIR / 'static',  # Your static files directory
 ]
+
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 # MEDIA FILES
 MEDIA_URL = '/media/'  # Leading and trailing slash

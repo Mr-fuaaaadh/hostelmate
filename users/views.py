@@ -86,7 +86,6 @@ class UserHostelViewSet(viewsets.ReadOnlyModelViewSet):
         """
         Cached hostel list endpoint.
         """
-        print("Serving cached hostel list")
         return super().list(request, *args, **kwargs)
 
     def retrieve(self, request, *args, **kwargs):

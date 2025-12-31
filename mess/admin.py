@@ -69,9 +69,37 @@ class MessMenuAdmin(ImportExportModelAdmin):
     ordering = ("day",)
 
 
-admin.site.register(Home)
-admin.site.register(HomeImage)
-admin.site.register(DeliveryArea)
-admin.site.register(MealPlan)
-admin.site.register(ProviderFeature)
+@admin.register(Home)
+class HomeAdmin(ImportExportModelAdmin):
+    list_display = ("name", "city", "state", "owner", "is_verified", "created_at")
+    search_fields = ("name", "city", "state", "pincode")
+    list_filter = ("city", "state", "is_verified")
 
+
+
+@admin.register(HomeImage)
+class HomeImageAdmin(ImportExportModelAdmin):
+    list_display = ("id", "home", "image", "alt_text", "created_at")
+    search_fields = ("home__name", "image", "alt_text")
+    list_filter = ("home",)
+    readonly_fields = ("created_at",)
+
+
+@admin.register(DeliveryArea)
+class DeliveryAreaAdmin(ImportExportModelAdmin):
+    list_display = ("id", "area_name", "provider", "created_at")
+    search_fields = ("area_name", "provider__id")
+    list_filter = ("provider_type",)
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(MealPlan)
+class MealPlanAdmin(ImportExportModelAdmin):
+    list_display = ("plan_id", "name", "price", "meals")
+    search_fields = ("plan_id", "name")
+
+
+@admin.register(ProviderFeature)
+class ProviderFeatureAdmin(ImportExportModelAdmin):
+    list_display = ("id", "title", "provider", "created_at")
+    search_fields = ("title", "description", "provider__id")

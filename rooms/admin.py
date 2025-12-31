@@ -15,7 +15,6 @@ class FacilityAdmin(ImportExportModelAdmin):
     search_fields = ("name",)
     prepopulated_fields = {"slug": ("name",)}
 
-
 # =====================================================
 # RoomImage Inline for Room Admin
 # =====================================================
@@ -31,7 +30,6 @@ class RoomImageInline(admin.TabularInline):
         return "-"
     image_preview.short_description = "Preview"
 
-
 # =====================================================
 # RoomFacility Inline for Room Admin
 # =====================================================
@@ -40,7 +38,6 @@ class RoomFacilityInline(admin.TabularInline):
     extra = 1
     autocomplete_fields = ["facility"]
 
-
 # =====================================================
 # Room Resource for bulk import/export
 # =====================================================
@@ -48,7 +45,6 @@ class RoomResource(resources.ModelResource):
     class Meta:
         model = Room
         fields = ("id", "hostel", "room_number", "room_type", "capacity", "daily_price", "monthly_price", "is_available")
-
 
 # =====================================================
 # Room Admin
@@ -62,23 +58,39 @@ class RoomAdmin(ImportExportModelAdmin):
     ordering = ("hostel", "room_number")
     inlines = [RoomFacilityInline, RoomImageInline]
 
+# =====================================================
+# RoomFacility Resource
+# =====================================================
+class RoomFacilityResource(resources.ModelResource):
+    class Meta:
+        model = RoomFacility
+        fields = ("id", "room", "facility")
 
 # =====================================================
 # RoomFacility Admin
 # =====================================================
 @admin.register(RoomFacility)
-class RoomFacilityAdmin(admin.ModelAdmin):
+class RoomFacilityAdmin(ImportExportModelAdmin):
+    resource_class = RoomFacilityResource
     list_display = ("room", "facility")
     list_filter = ("facility",)
     search_fields = ("room__room_number", "facility__name")
     autocomplete_fields = ["room", "facility"]
 
+# =====================================================
+# RoomImage Resource
+# =====================================================
+class RoomImageResource(resources.ModelResource):
+    class Meta:
+        model = RoomImage
+        fields = ("id", "room", "image", "caption", "is_cover", "order", "is_active", "created_at")
 
 # =====================================================
 # RoomImage Admin
 # =====================================================
 @admin.register(RoomImage)
-class RoomImageAdmin(admin.ModelAdmin):
+class RoomImageAdmin(ImportExportModelAdmin):
+    resource_class = RoomImageResource
     list_display = ("room", "image_preview", "caption", "is_cover", "order", "is_active", "created_at")
     list_filter = ("is_cover", "is_active", "room__hostel")
     search_fields = ("room__room_number", "caption", "room__hostel__name")

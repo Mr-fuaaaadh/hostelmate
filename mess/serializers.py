@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import Home, HomeImage, MessMenu, DeliveryArea, MealPlan, ProviderFeature
-from users.models import CustomUser
+from django.contrib.contenttypes.models import ContentType
 
 
 # -----------------------------
@@ -64,9 +64,10 @@ class HomeSerializer(serializers.ModelSerializer):
     owner = serializers.StringRelatedField(read_only=True)
     images = HomeImageSerializer(many=True, read_only=True)
     mess_menus = MessMenuSerializer(many=True, read_only=True)
-    delivery_areas = DeliveryAreaSerializer(many=True, read_only=True)
-    meal_plans = MealPlanSerializer(many=True, read_only=True)
-    features = ProviderFeatureSerializer(many=True, read_only=True)
+
+    delivery_areas = serializers.SerializerMethodField()
+    meal_plans = serializers.SerializerMethodField()
+    features = serializers.SerializerMethodField()
 
     class Meta:
         model = Home
@@ -75,5 +76,34 @@ class HomeSerializer(serializers.ModelSerializer):
             "city", "state", "pincode", "description",
             "latitude", "longitude", "is_verified",
             "created_at", "updated_at",
-            "images", "mess_menus", "delivery_areas", "meal_plans", "features",
+            "images", "mess_menus",
+            "delivery_areas", "meal_plans", "features",
         ]
+
+    # ----------------------------
+    # Generic FK resolvers
+    # ----------------------------
+    def get_delivery_areas(self, obj):
+        content_type = ContentType.objects.get_for_model(Home)
+        qs = DeliveryArea.objects.filter(
+            provider_type=content_type,
+            provider_id=obj.id
+        )
+        return DeliveryAreaSerializer(qs, many=True).data
+
+    def get_meal_plans(self, obj):
+        content_type = ContentType.objects.get_for_model(Home)
+        qs = MealPlan.objects.filter(
+            provider_type=content_type,
+            provider_id=obj.id
+        )
+        return MealPlanSerializer(qs, many=True).data
+
+    def get_features(self, obj):
+        content_type = ContentType.objects.get_for_model(Home)
+        qs = ProviderFeature.objects.filter(
+            provider_type=content_type,
+            provider_id=obj.id
+        )
+        return ProviderFeatureSerializer(qs, many=True).data
+

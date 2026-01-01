@@ -97,7 +97,6 @@ class HostelSerializer(serializers.ModelSerializer):
 # -----------------------------
 class HostelCreateUpdateSerializer(serializers.ModelSerializer):
     hostel_facilities = HostelFacilitySerializer(many=True, required=True)
-    images = HostelImageSerializer(many=True, required=True)
     rules = HostelRuleSerializer(many=True, required=True)
 
     class Meta:
@@ -106,54 +105,28 @@ class HostelCreateUpdateSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def create(self, validated_data):
+        request = self.context["request"]
+
         facilities_data = validated_data.pop("hostel_facilities", [])
-        images_data = validated_data.pop("images", [])
         rules_data = validated_data.pop("rules", [])
 
-        # ✅ OWNER IS SET IN VIEWSET ONLY
+        images = request.FILES.getlist("images")
         hostel = Hostel.objects.create(**validated_data)
+        HostelFacility.objects.bulk_create([
+            HostelFacility(hostel=hostel, **facility)
+            for facility in facilities_data
+        ])
 
-        for facility in facilities_data:
-            HostelFacility.objects.create(hostel=hostel, **facility)
+        HostelRule.objects.bulk_create([
+            HostelRule(hostel=hostel, **rule)
+            for rule in rules_data
+        ])
 
-        for image in images_data:
-            HostelImage.objects.create(hostel=hostel, **image)
-
-        for rule in rules_data:
-            HostelRule.objects.create(hostel=hostel, **rule)
+        HostelImage.objects.bulk_create([
+            HostelImage(hostel=hostel, image=image)
+            for image in images
+        ])
 
         return hostel
 
-    @transaction.atomic
-    def update(self, instance, validated_data):
-        facilities_data = validated_data.pop("hostel_facilities", None)
-        images_data = validated_data.pop("images", None)
-        rules_data = validated_data.pop("rules", None)
-
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        instance.save()
-
-        if facilities_data is not None:
-            instance.hostel_facilities.all().delete()
-            HostelFacility.objects.bulk_create([
-                HostelFacility(hostel=instance, **f)
-                for f in facilities_data
-            ])
-
-        if images_data is not None:
-            instance.images.all().delete()
-            HostelImage.objects.bulk_create([
-                HostelImage(hostel=instance, **i)
-                for i in images_data
-            ])
-
-        if rules_data is not None:
-            instance.rules.all().delete()
-            HostelRule.objects.bulk_create([
-                HostelRule(hostel=instance, **r)
-                for r in rules_data
-            ])
-
-        return instance
 

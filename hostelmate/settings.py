@@ -106,7 +106,12 @@ WSGI_APPLICATION = 'hostelmate.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.sqlite3',
+#         'NAME': BASE_DIR / 'db.sqlite3',
+#     }
+# }
 
 
 DATABASES = {
@@ -114,7 +119,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': 'hostelmate',
         'USER': 'hosteluser',
-        'PASSWORD': 'strongpassword',
+        'PASSWORD': 'hostelmate@123',
         'HOST': 'localhost',
         'PORT': '5432',
     }

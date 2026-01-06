@@ -1,12 +1,12 @@
 from rest_framework import serializers
 from .models import Hostel, HostelImage, HostelFacility, HostelRule
-from rooms.models import Facility
+from rooms.models import Facility, Room
 from rooms.serializers import RoomSerializer
 from mess.serializers import MessMenuSerializer
 from mess.models import MessMenu
 from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
-
+import json
 
 
 # -----------------------------
@@ -92,41 +92,98 @@ class HostelSerializer(serializers.ModelSerializer):
         return MessMenuSerializer(menus, many=True).data
 
 
-# -----------------------------
-# Hostel Create / Update Serializer
-# -----------------------------
 class HostelCreateUpdateSerializer(serializers.ModelSerializer):
-    hostel_facilities = HostelFacilitySerializer(many=True, required=True)
-    rules = HostelRuleSerializer(many=True, required=True)
+    facilities = serializers.ListField(
+        child=serializers.IntegerField(),
+        write_only=True,
+        required=False
+    )
+
+    rules = serializers.CharField(write_only=True, required=False)
+    rooms = serializers.CharField(write_only=True, required=False)
+    mess = serializers.CharField(write_only=True, required=False)
+
+    images = serializers.ListField(
+        child=serializers.ImageField(),
+        write_only=True,
+        required=False
+    )
 
     class Meta:
         model = Hostel
-        exclude = ["owner", "created_at", "updated_at"]
+        fields = [
+            "name", "description", "address",
+            "city", "state", "pincode",
+            "hostel_type", "latitude", "longitude",
+            "facilities", "rules", "rooms", "mess",
+            "images",
+        ]
 
-    @transaction.atomic
     def create(self, validated_data):
-        request = self.context["request"]
+        facilities = validated_data.pop("facilities", [])
+        rules_raw = validated_data.pop("rules", "[]")
+        rooms_raw = validated_data.pop("rooms", "[]")
+        mess_raw = validated_data.pop("mess", "[]")
+        images = validated_data.pop("images", [])
 
-        facilities_data = validated_data.pop("hostel_facilities", [])
-        rules_data = validated_data.pop("rules", [])
+        try:
+            rules = json.loads(rules_raw)
+            rooms = json.loads(rooms_raw)
+            mess = json.loads(mess_raw)
+        except json.JSONDecodeError:
+            raise serializers.ValidationError("Invalid JSON format")
 
-        images = request.FILES.getlist("images")
         hostel = Hostel.objects.create(**validated_data)
+
+        # Facilities
         HostelFacility.objects.bulk_create([
-            HostelFacility(hostel=hostel, **facility)
-            for facility in facilities_data
+            HostelFacility(hostel=hostel, facility_id=fid)
+            for fid in facilities
         ])
 
+        # Rules
         HostelRule.objects.bulk_create([
-            HostelRule(hostel=hostel, **rule)
-            for rule in rules_data
+            HostelRule(
+                hostel=hostel,
+                title=r["title"],
+                description=r["description"],
+                rule_type=r.get("rule_type", "general")
+            ) for r in rules
         ])
 
+        # Rooms
+        Room.objects.bulk_create([
+            Room(
+                hostel=hostel,
+                room_number=room["room_number"],
+                room_type=room["room_type"],
+                capacity=room["capacity"],
+                daily_price=room["daily_price"],
+                monthly_price=room["monthly_price"],
+                description=room.get("description", "")
+            ) for room in rooms
+        ])
+
+        # Mess Menu
+        content_type = ContentType.objects.get_for_model(Hostel)
+        MessMenu.objects.bulk_create([
+            MessMenu(
+                content_type=content_type,
+                object_id=hostel.id,
+                day=m["day"],
+                veg_breakfast=m.get("veg_breakfast"),
+                veg_lunch=m.get("veg_lunch"),
+                veg_dinner=m.get("veg_dinner"),
+                nonveg_breakfast=m.get("nonveg_breakfast"),
+                nonveg_lunch=m.get("nonveg_lunch"),
+                nonveg_dinner=m.get("nonveg_dinner"),
+            ) for m in mess
+        ])
+
+        # Images
         HostelImage.objects.bulk_create([
             HostelImage(hostel=hostel, image=image)
             for image in images
         ])
 
         return hostel
-
-

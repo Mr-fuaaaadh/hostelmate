@@ -1,5 +1,8 @@
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
+from django.db.models import Q
+from rest_framework.views import APIView
+from rest_framework.permissions import AllowAny
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets, mixins, permissions
 from rest_framework.pagination import PageNumberPagination
@@ -187,4 +190,83 @@ class MessProvidersViewSet(viewsets.ReadOnlyModelViewSet):
             cache.set(cache_key, data, 60 * 5)
 
         return Response(data)
+    
+
+
+class UnifiedSearchSuggestionAPIView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        query = request.query_params.get("q", "").strip()
+
+        # 🚫 minimum length
+        if len(query) < 2:
+            return Response([])
+
+        cache_key = f"search_suggestions_{query.lower()}"
+        cached_data = cache.get(cache_key)
+        if cached_data:
+            return Response(cached_data)
+
+        results = []
+
+        # ---------------- HOSTELS ----------------
+        hostels = (
+            Hostel.objects
+            .filter(is_active=True)
+            .filter(
+                Q(name__icontains=query) |
+                Q(city__icontains=query)
+            )
+            .prefetch_related("images")
+            .only("id", "name", "city", "description")[:5]
+        )
+
+        for hostel in hostels:
+            image_url = (
+                hostel.images.first().image.url
+                if hostel.images.exists()
+                else None
+            )
+
+            results.append({
+                "id": hostel.id,
+                "type": "hostel",
+                "name": hostel.name,
+                "city": hostel.city,
+                "description": hostel.description[:120],
+            })
+
+        # ---------------- MESS PROVIDERS ----------------
+        messes = (
+            Home.objects
+            .filter(is_verified=True)
+            .filter(
+                Q(name__icontains=query) |
+                Q(city__icontains=query)
+            )
+            .prefetch_related("images")
+            .only("id", "name", "city", "description")[:5]
+        )
+
+        for mess in messes:
+            image_url = (
+                mess.images.first().image.url
+                if mess.images.exists()
+                else None
+            )
+
+            results.append({
+                "id": mess.id,
+                "type": "mess",
+                "name": mess.name,
+                "city": mess.city,
+                "description": mess.description[:120],
+                "image": image_url,
+            })
+
+        # ⚡ cache for 5 minutes
+        cache.set(cache_key, results, 60 * 5)
+
+        return Response(results)
 

@@ -5,7 +5,7 @@ from .views import RoomViewSet, FacilityViewSet, RoomImageViewSet
 router = DefaultRouter()
 router.register(r'rooms', RoomViewSet, basename='room')
 router.register(r'facilities', FacilityViewSet, basename='facility')
-router.register("room-images", RoomImageViewSet, basename="roomimage")
+router.register(r"room-images", RoomImageViewSet, basename="roomimage")
 urlpatterns = [
     path('', include(router.urls)),
 ]

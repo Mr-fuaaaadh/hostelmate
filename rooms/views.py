@@ -6,11 +6,10 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.exceptions import ValidationError
 from .models import Room, Facility, RoomImage, RoomFacility
 from .serializers import (
-    RoomSerializer,
-    RoomCreateUpdateSerializer,
+    RoomReadSerializer,
+    RoomWriteSerializer,
     FacilitySerializer,
-    RoomImageSerializer,
-    RoomFacilitySerializer,
+    RoomImageSerializer
 )
 from hostels.permissions import IsOwnerOrReadOnly, IsAdminOrReadOnly
 
@@ -31,7 +30,7 @@ class FacilityViewSet(viewsets.ModelViewSet):
 
 
 class RoomViewSet(viewsets.ModelViewSet):
-    permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
+    permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardResultsSetPagination
     parser_classes = [JSONParser, FormParser, MultiPartParser]
 
@@ -41,22 +40,40 @@ class RoomViewSet(viewsets.ModelViewSet):
         filters.OrderingFilter,
     ]
 
+
     filterset_fields = ["hostel", "room_type", "is_available"]
     search_fields = ["room_number", "hostel__name"]
     ordering_fields = ["daily_price", "monthly_price", "capacity"]
     ordering = ["room_number"]
 
     def get_queryset(self):
+        """
+        Optimized production-standard queryset.
+        - select_related: One SQL hit for hostel and its owner.
+        - prefetch_related: Separate optimized queries for images and facilities.
+        """
         return Room.objects.filter(
             hostel__owner=self.request.user
-        ).select_related("hostel").prefetch_related(
-            "images", "room_facilities__facility"
+        ).select_related("hostel__owner").prefetch_related(
+            "images", 
+            "room_facilities__facility"
         )
 
     def get_serializer_class(self):
-        if self.action in ["create", "update", "partial_update"]:
-            return RoomCreateUpdateSerializer
-        return RoomSerializer
+        if self.action in ["create", "update", "partial_update", "create"]:
+            return RoomWriteSerializer
+        return RoomReadSerializer
+
+    def perform_create(self, serializer):
+        # Additional safety check: Ensure the user owns the hostel they are adding a room to
+        hostel = serializer.validated_data.get('hostel')
+        if hostel.owner != self.request.user:
+            raise ValidationError({"hostel": "You do not have permission to add rooms to this hostel."})
+        
+        room = serializer.save()
+        import logging
+        logger = logging.getLogger(__name__)
+        print(f"Room {room.id} created for hostel {room.hostel.id} by user {self.request.user.id}")
 
 
 class RoomImageViewSet(viewsets.ModelViewSet):

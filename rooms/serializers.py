@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import Room, Facility, RoomImage, RoomFacility
+from django.db import transaction
 
 # Facility Serializer
 class FacilitySerializer(serializers.ModelSerializer):
@@ -7,29 +8,32 @@ class FacilitySerializer(serializers.ModelSerializer):
         model = Facility
         fields = ["id", "name", "slug"]
 
-# Room Facility Serializer
-class RoomFacilitySerializer(serializers.ModelSerializer):
-    facility = FacilitySerializer(read_only=True)
-    facility_id = serializers.PrimaryKeyRelatedField(
-        queryset=Facility.objects.all(),
-        source="facility",
-        write_only=True
-    )
+# -----------------------------
+# Read Serializers (Optimized for Output)
+# -----------------------------
 
+class RoomImageReadSerializer(serializers.ModelSerializer):
     class Meta:
-        model = RoomFacility
-        fields = ["id", "facility", "facility_id"]
+        model = RoomImage
+        fields = ["id", "image", "caption", "is_cover", "order"]
 
-# Room Image Serializer
 class RoomImageSerializer(serializers.ModelSerializer):
     class Meta:
         model = RoomImage
-        fields = ["id","room", "image", "caption", "is_cover", "order", "is_active"]
+        fields = ["id", "room", "image", "caption", "is_cover", "order", "is_active", "created_at"]
 
-# Room Serializer (Full)
-class RoomSerializer(serializers.ModelSerializer):
-    images = RoomImageSerializer(many=True, read_only=True)
-    room_facilities = RoomFacilitySerializer(many=True, read_only=True)
+class RoomFacilityReadSerializer(serializers.ModelSerializer):
+    facility = FacilitySerializer(read_only=True)
+    class Meta:
+        model = RoomFacility
+        fields = ["id", "facility"]
+
+class RoomReadSerializer(serializers.ModelSerializer):
+    """
+    Detailed output serializer with prefetched nesting.
+    """
+    images = RoomImageReadSerializer(many=True, read_only=True)
+    room_facilities = RoomFacilityReadSerializer(many=True, read_only=True)
     hostel_name = serializers.CharField(source="hostel.name", read_only=True)
 
     class Meta:
@@ -40,47 +44,78 @@ class RoomSerializer(serializers.ModelSerializer):
             "description", "images", "room_facilities"
         ]
 
-# Room Create/Update Serializer
-class RoomCreateUpdateSerializer(serializers.ModelSerializer):
-    room_facilities = RoomFacilitySerializer(many=True, required=False)
-    images = RoomImageSerializer(many=True, required=False)
+# -----------------------------
+# Write Serializers (Optimized for Input)
+# -----------------------------
+
+class RoomWriteSerializer(serializers.ModelSerializer):
+    """
+    Production-standard write serializer.
+    Handles flat ID lists for facilities and binary file uploads for images.
+    """
+    facility_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        write_only=True,
+        required=False,
+        help_text="List of Facility IDs"
+    )
+    uploaded_images = serializers.ListField(
+        child=serializers.ImageField(),
+        write_only=True,
+        required=False,
+        help_text="Multiple binary image files"
+    )
 
     class Meta:
         model = Room
         fields = [
             "hostel", "room_number", "room_type", "is_available",
             "capacity", "daily_price", "monthly_price", "description",
-            "room_facilities", "images"
+            "facility_ids", "uploaded_images"
         ]
 
+    @transaction.atomic
     def create(self, validated_data):
-        facilities_data = validated_data.pop("room_facilities", [])
-        images_data = validated_data.pop("images", [])
+        facility_ids = validated_data.pop("facility_ids", [])
+        uploaded_images = validated_data.pop("uploaded_images", [])
+
         room = Room.objects.create(**validated_data)
 
-        for fdata in facilities_data:
-            RoomFacility.objects.create(room=room, **fdata)
-        for idata in images_data:
-            RoomImage.objects.create(room=room, **idata)
+        # Bulk create relationship entries
+        if facility_ids:
+            RoomFacility.objects.bulk_create([
+                RoomFacility(room=room, facility_id=fid)
+                for fid in facility_ids
+            ])
+
+        # Handle image uploads
+        if uploaded_images:
+            for image in uploaded_images:
+                RoomImage.objects.create(room=room, image=image)
 
         return room
 
+    @transaction.atomic
     def update(self, instance, validated_data):
-        facilities_data = validated_data.pop("room_facilities", [])
-        images_data = validated_data.pop("images", [])
+        facility_ids = validated_data.pop("facility_ids", None)
+        uploaded_images = validated_data.pop("uploaded_images", None)
 
+        # Update base fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
 
-        if facilities_data:
+        # Update Facilities (Replace logic)
+        if facility_ids is not None:
             instance.room_facilities.all().delete()
-            for fdata in facilities_data:
-                RoomFacility.objects.create(room=instance, **fdata)
+            RoomFacility.objects.bulk_create([
+                RoomFacility(room=instance, facility_id=fid)
+                for fid in facility_ids
+            ])
 
-        if images_data:
-            instance.images.all().delete()
-            for idata in images_data:
-                RoomImage.objects.create(room=instance, **idata)
+        # Append new images
+        if uploaded_images:
+            for image in uploaded_images:
+                RoomImage.objects.create(room=instance, image=image)
 
         return instance

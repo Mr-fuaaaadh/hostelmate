@@ -39,9 +39,14 @@ class HostelViewSet(viewsets.ModelViewSet):
     pagination_class = StandardResultsSetPagination  # ✅ ADD THIS LINE
 
     def get_queryset(self):
-        queryset = Hostel.objects.filter(owner=self.request.user)
+        queryset = Hostel.objects.filter(owner=self.request.user).select_related("owner").prefetch_related(
+            "hostel_facilities__facility",
+            "images",
+            "rules",
+            "rooms"
+        )
         logger.info(
-            f"User {self.request.user.id} accessed hostels"
+            f"User {self.request.user.id} accessed hostels - Count: {queryset.count()}"
         )
         return queryset
 

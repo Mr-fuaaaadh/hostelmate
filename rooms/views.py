@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
-
+from rest_framework.exceptions import ValidationError
 from .models import Room, Facility, RoomImage, RoomFacility
 from .serializers import (
     RoomSerializer,
@@ -62,14 +62,27 @@ class RoomViewSet(viewsets.ModelViewSet):
 class RoomImageViewSet(viewsets.ModelViewSet):
     serializer_class = RoomImageSerializer
     permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
-    pagination_class = StandardResultsSetPagination
     parser_classes = [MultiPartParser, FormParser]
 
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = ["room"]
-    search_fields = ["room__room_number"]
 
     def get_queryset(self):
         return RoomImage.objects.filter(
             room__hostel__owner=self.request.user
-        ).select_related("room", "room__hostel")
+        )
+
+    def perform_create(self, serializer):
+        room = serializer.validated_data.get("room")
+        print(room)
+
+        if not room:
+            raise ValidationError({"room": "Room is required"})
+
+        if room.hostel.owner != self.request.user:
+            raise ValidationError({"room": "This room does not belong to you"})
+
+        serializer.save()
+
+
+

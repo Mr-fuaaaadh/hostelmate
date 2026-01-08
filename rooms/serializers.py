@@ -24,7 +24,7 @@ class RoomFacilitySerializer(serializers.ModelSerializer):
 class RoomImageSerializer(serializers.ModelSerializer):
     class Meta:
         model = RoomImage
-        fields = ["id", "image", "caption", "is_cover", "order", "is_active"]
+        fields = ["id","room", "image", "caption", "is_cover", "order", "is_active"]
 
 # Room Serializer (Full)
 class RoomSerializer(serializers.ModelSerializer):

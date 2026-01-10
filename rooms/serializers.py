@@ -78,7 +78,6 @@ class RoomWriteSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         facility_ids = validated_data.pop("facility_ids", [])
         uploaded_images = validated_data.pop("uploaded_images", [])
-
         room = Room.objects.create(**validated_data)
 
         # Bulk create relationship entries

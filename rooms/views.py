@@ -73,7 +73,6 @@ class RoomViewSet(viewsets.ModelViewSet):
         room = serializer.save()
         import logging
         logger = logging.getLogger(__name__)
-        print(f"Room {room.id} created for hostel {room.hostel.id} by user {self.request.user.id}")
 
 
 class RoomImageViewSet(viewsets.ModelViewSet):

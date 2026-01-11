@@ -90,8 +90,6 @@ class RoomImageViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         room = serializer.validated_data.get("room")
-        print(room)
-
         if not room:
             raise ValidationError({"room": "Room is required"})
 

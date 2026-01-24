@@ -20,6 +20,10 @@ class StandardResultsSetPagination(PageNumberPagination):
 
 
 class FacilityViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing room facilities.
+    Provides standard CRUD operations with search capabilities.
+    """
     queryset = Facility.objects.filter(is_active=True)
     serializer_class = FacilitySerializer
     permission_classes = [IsAdminOrReadOnly]
@@ -27,19 +31,20 @@ class FacilityViewSet(viewsets.ModelViewSet):
     search_fields = ["name"]
 
 
-
-
 class RoomViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing hostel rooms.
+    Supports filtering, searching, and optimized data retrieval.
+    """
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardResultsSetPagination
-    parser_classes = [JSONParser, FormParser, MultiPartParser]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     filter_backends = [
         DjangoFilterBackend,
         filters.SearchFilter,
         filters.OrderingFilter,
     ]
-
 
     filterset_fields = ["hostel", "room_type", "is_available"]
     search_fields = ["room_number", "hostel__name"]
@@ -48,34 +53,42 @@ class RoomViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """
-        Optimized production-standard queryset.
-        - select_related: One SQL hit for hostel and its owner.
-        - prefetch_related: Separate optimized queries for images and facilities.
+        Retrieves optimized queryset of rooms owned by the current user.
+        Uses select_related and prefetch_related to minimize database hits.
         """
         return Room.objects.filter(
             hostel__owner=self.request.user
-        ).select_related("hostel__owner").prefetch_related(
+        ).select_related("hostel").prefetch_related(
             "images", 
             "room_facilities__facility"
         )
 
     def get_serializer_class(self):
-        if self.action in ["create", "update", "partial_update", "create"]:
+        """
+        Returns different serializers for read and write operations.
+        """
+        if self.action in ["create", "update", "partial_update"]:
             return RoomWriteSerializer
         return RoomReadSerializer
 
     def perform_create(self, serializer):
-        # Additional safety check: Ensure the user owns the hostel they are adding a room to
+        """
+        Ensures the hostel associated with the new room is owned by the user.
+        """
         hostel = serializer.validated_data.get('hostel')
-        if hostel.owner != self.request.user:
-            raise ValidationError({"hostel": "You do not have permission to add rooms to this hostel."})
+        if hostel and hostel.owner != self.request.user:
+            raise ValidationError(
+                {"hostel": "You do not have permission to add rooms to this hostel."}
+            )
         
-        room = serializer.save()
-        import logging
-        logger = logging.getLogger(__name__)
+        serializer.save()
 
 
 class RoomImageViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing room images.
+    Restricted to images of rooms owned by the current user.
+    """
     serializer_class = RoomImageSerializer
     permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
     parser_classes = [MultiPartParser, FormParser]
@@ -84,11 +97,17 @@ class RoomImageViewSet(viewsets.ModelViewSet):
     filterset_fields = ["room"]
 
     def get_queryset(self):
+        """
+        Limits visibility to images of rooms owned by the authorized user.
+        """
         return RoomImage.objects.filter(
             room__hostel__owner=self.request.user
-        )
+        ).select_related("room__hostel")
 
     def perform_create(self, serializer):
+        """
+        Validates ownership of the room before allowing image upload.
+        """
         room = serializer.validated_data.get("room")
         if not room:
             raise ValidationError({"room": "Room is required"})

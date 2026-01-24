@@ -1,3 +1,4 @@
+from django.db import models
 from django.db.models.signals import pre_save, post_delete, post_save
 from django.dispatch import receiver
 from .models import Room, RoomImage
@@ -10,24 +11,34 @@ logger = logging.getLogger(__name__)
 # --------------------------------------------------
 @receiver([post_save, post_delete], sender=Room)
 def update_hostel_room_counts(sender, instance, **kwargs):
+    """
+    Automatically updates the total and available room counts for a hostel 
+    whenever a room is created, updated, or deleted.
+    """
     if not instance.hostel_id:
         return
 
-    hostel = instance.hostel
+    try:
+        hostel = instance.hostel
+        
+        # Use aggregate for better performance if counts are complex
+        counts = hostel.rooms.aggregate(
+            total=models.Count('id'),
+            available=models.Count('id', filter=models.Q(is_available=True))
+        )
 
-    total_rooms = hostel.rooms.count()
-    available_rooms = hostel.rooms.filter(is_available=True).count()
+        # Avoid recursive save via post_save signal
+        type(hostel).objects.filter(pk=hostel.pk).update(
+            total_rooms_count=counts['total'],
+            available_rooms_count=counts['available'],
+        )
 
-    # Avoid recursive save
-    type(hostel).objects.filter(pk=hostel.pk).update(
-        total_rooms_count=total_rooms,
-        available_rooms_count=available_rooms,
-    )
-
-    logger.info(
-        f"Updated room counts for hostel {hostel.name} "
-        f"(total={total_rooms}, available={available_rooms})"
-    )
+        logger.info(
+            f"Updated room counts for hostel {hostel.name} "
+            f"(total={counts['total']}, available={counts['available']})"
+        )
+    except Exception as e:
+        logger.error(f"Failed to update hostel room counts: {str(e)}")
 
 
 # --------------------------------------------------
@@ -35,7 +46,11 @@ def update_hostel_room_counts(sender, instance, **kwargs):
 # --------------------------------------------------
 @receiver(pre_save, sender=RoomImage)
 def enforce_single_cover(sender, instance, **kwargs):
+    """
+    Ensures that only one image is marked as 'is_cover' for any given room.
+    """
     if instance.is_cover and instance.room_id:
+        # Use update() to bypass signals and prevent recursion
         RoomImage.objects.filter(
             room_id=instance.room_id,
             is_cover=True
@@ -47,11 +62,14 @@ def enforce_single_cover(sender, instance, **kwargs):
 # --------------------------------------------------
 @receiver(post_delete, sender=RoomImage)
 def delete_room_image_file(sender, instance, **kwargs):
+    """
+    Deletes the physical image file from storage when a RoomImage record is deleted.
+    """
     if instance.image:
-        instance.image.delete(save=False)
-
-    if instance.room_id:
-        logger.info(
-            f"Deleted image for room {instance.room.room_number} "
-            f"in hostel {instance.room.hostel.name}"
-        )
+        try:
+            instance.image.delete(save=False)
+            logger.info(
+                f"Deleted physical image file for Room ID {instance.room_id}"
+            )
+        except Exception as e:
+            logger.error(f"Error deleting image file: {str(e)}")

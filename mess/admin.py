@@ -87,10 +87,24 @@ class HomeImageAdmin(ImportExportModelAdmin):
 
 @admin.register(DeliveryArea)
 class DeliveryAreaAdmin(ImportExportModelAdmin):
-    list_display = ("id", "area_name", "provider", "created_at")
-    search_fields = ("area_name", "provider__id")
+    list_display = (
+        "id",
+        "area_name",
+        "provider_display",
+        "provider_type",
+        "created_at",
+    )
+
+    search_fields = ("area_name",)  
     list_filter = ("provider_type",)
     readonly_fields = ("created_at", "updated_at")
+
+    def provider_display(self, obj):
+        return str(obj.provider) if obj.provider else "-"
+    
+    provider_display.short_description = "Provider"
+
+
 
 
 @admin.register(MealPlan)

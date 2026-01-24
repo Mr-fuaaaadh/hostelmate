@@ -115,5 +115,17 @@ class MealPlanAdmin(ImportExportModelAdmin):
 
 @admin.register(ProviderFeature)
 class ProviderFeatureAdmin(ImportExportModelAdmin):
-    list_display = ("id", "title", "provider", "created_at")
-    search_fields = ("title", "description", "provider__id")
+    list_display = (
+        "id",
+        "title",
+        "provider_display",
+        "created_at",
+    )
+
+    search_fields = ("title", "description")
+    readonly_fields = ("created_at", "updated_at")
+
+    def provider_display(self, obj):
+        return str(obj.provider) if obj.provider else "-"
+
+    provider_display.short_description = "Provider"

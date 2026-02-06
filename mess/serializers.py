@@ -7,9 +7,32 @@ from django.contrib.contenttypes.models import ContentType
 # Home Image Serializer
 # -----------------------------
 class HomeImageSerializer(serializers.ModelSerializer):
+    home_id = serializers.PrimaryKeyRelatedField(
+        queryset=Home.objects.all(),
+        source="home",
+        write_only=True
+    )
+
+    image_url = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = HomeImage
-        fields = ["id", "image", "alt_text", "created_at"]
+        fields = [
+            "id",
+            "home_id",
+            "image",
+            "image_url",
+            "alt_text",
+            "created_at",
+        ]
+        read_only_fields = ["id", "created_at"]
+
+    def get_image_url(self, obj):
+        request = self.context.get("request")
+        if obj.image and request:
+            return request.build_absolute_uri(obj.image.url)
+        return None
+
 
 
 # -----------------------------
@@ -107,3 +130,62 @@ class HomeSerializer(serializers.ModelSerializer):
         )
         return ProviderFeatureSerializer(qs, many=True).data
 
+
+
+
+
+
+
+
+class HomeImageBulkUploadSerializer(serializers.Serializer):
+    home_id = serializers.IntegerField()
+    images = serializers.ListField(
+        child=serializers.ImageField(),
+        allow_empty=False
+    )
+    alt_texts = serializers.ListField(
+        child=serializers.CharField(max_length=500),
+        required=False
+    )
+
+    def validate(self, attrs):
+        images = attrs["images"]
+        alt_texts = attrs.get("alt_texts", [])
+
+        if alt_texts and len(images) != len(alt_texts):
+            raise serializers.ValidationError(
+                "Images count and alt_texts count must match"
+            )
+
+        return attrs
+
+
+
+
+class MessMenuBulkUploadSerializer(serializers.Serializer):
+    day = serializers.ChoiceField(choices=MessMenu.DAY_CHOICES)
+    
+    # Veg meals
+    veg_breakfast = serializers.CharField(required=False, allow_blank=True)
+    veg_breakfast_accompaniment = serializers.CharField(required=False, allow_blank=True)
+    veg_lunch = serializers.CharField(required=False, allow_blank=True)
+    veg_lunch_accompaniment = serializers.CharField(required=False, allow_blank=True)
+    veg_dinner = serializers.CharField(required=False, allow_blank=True)
+    veg_dinner_accompaniment = serializers.CharField(required=False, allow_blank=True)
+
+    # Non-veg meals
+    nonveg_breakfast = serializers.CharField(required=False, allow_blank=True)
+    nonveg_breakfast_accompaniment = serializers.CharField(required=False, allow_blank=True)
+    nonveg_lunch = serializers.CharField(required=False, allow_blank=True)
+    nonveg_lunch_accompaniment = serializers.CharField(required=False, allow_blank=True)
+    nonveg_dinner = serializers.CharField(required=False, allow_blank=True)
+    nonveg_dinner_accompaniment = serializers.CharField(required=False, allow_blank=True)
+
+    # Meal images
+    breakfast_image = serializers.ImageField(required=False)
+    lunch_image = serializers.ImageField(required=False)
+    dinner_image = serializers.ImageField(required=False)
+
+    # Accept list of items
+    def validate(self, attrs):
+        return attrs

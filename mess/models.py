@@ -109,9 +109,7 @@ class DeliveryArea(models.Model):
     provider_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
     provider_id = models.PositiveIntegerField()
     provider = GenericForeignKey("provider_type", "provider_id")
-
     area_name = models.CharField(max_length=100, db_index=True)
-
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

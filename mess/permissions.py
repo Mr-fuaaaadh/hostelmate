@@ -13,3 +13,12 @@ class IsOwnerOfHome(permissions.BasePermission):
     """
     def has_object_permission(self, request, view, obj):
         return obj.owner == request.user
+
+
+class IsOwnerOfHomeImage(permissions.BasePermission):
+    """
+    Object-level permission to allow access only to images
+    belonging to homes owned by the user.
+    """
+    def has_object_permission(self, request, view, obj):
+        return obj.home.owner == request.user

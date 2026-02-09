@@ -247,11 +247,7 @@ class MessMenuViewSet(viewsets.ModelViewSet):
     def bulk_upload(self, request):
         menus = request.data.get("menus", [])
         if not menus:
-            return Response(
-                {"error": "No menus provided"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
+            return Response({"error": "No menus provided"},status=status.HTTP_400_BAD_REQUEST)
         home_ct = ContentType.objects.get_for_model(Home)
         created = 0
         updated = 0
@@ -260,19 +256,9 @@ class MessMenuViewSet(viewsets.ModelViewSet):
             serializer = MessMenuBulkUploadSerializer(data=menu_data)
             serializer.is_valid(raise_exception=True)
             validated = serializer.validated_data
-
             home = get_object_or_404(Home, owner=request.user)
-
-
             day = validated.pop("day")
-
-            menu, is_created = MessMenu.objects.update_or_create(
-                content_type=home_ct,
-                object_id=home.pk,
-                day=day,
-                defaults=validated
-            )
-
+            menu, is_created = MessMenu.objects.update_or_create(content_type=home_ct,object_id=home.pk,day=day,defaults=validated)
             created += int(is_created)
             updated += int(not is_created)
 

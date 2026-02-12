@@ -83,6 +83,18 @@ class RoomViewSet(viewsets.ModelViewSet):
         
         serializer.save()
 
+    def perform_update(self, serializer):
+        """
+        Ensures the hostel associated with the room is owned by the user if changed.
+        """
+        hostel = serializer.validated_data.get('hostel')
+        if hostel and hostel.owner != self.request.user:
+            raise ValidationError(
+                {"hostel": "You do not have permission to add rooms to this hostel."}
+            )
+        
+        serializer.save()
+
 
 class RoomImageViewSet(viewsets.ModelViewSet):
     """

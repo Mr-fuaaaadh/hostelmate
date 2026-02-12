@@ -70,18 +70,31 @@ class RoomWriteSerializer(serializers.ModelSerializer):
     """
     Production-standard write serializer for Rooms.
     Handles flat ID lists for facilities and binary file uploads for images.
+    Supports selective deletion of images and facilities during update.
     """
-    facility_ids = serializers.ListField(
+    facility = serializers.ListField(
         child=serializers.IntegerField(),
         write_only=True,
         required=False,
-        help_text="List of Facility IDs"
+        help_text="List of Facility IDs to add"
     )
-    uploaded_images = serializers.ListField(
+    images = serializers.ListField(
         child=serializers.ImageField(),
         write_only=True,
         required=False,
-        help_text="Multiple binary image files"
+        help_text="Multiple binary image files to upload"
+    )
+    deleted_images = serializers.ListField(
+        child=serializers.IntegerField(),
+        write_only=True,
+        required=False
+    )
+
+    deleted_facilities = serializers.ListField(
+        child=serializers.IntegerField(),
+        write_only=True,
+        required=False,
+        help_text="List of Facility IDs to remove"
     )
 
     class Meta:
@@ -89,8 +102,45 @@ class RoomWriteSerializer(serializers.ModelSerializer):
         fields = [
             "hostel", "room_number", "room_type", "is_available",
             "capacity", "daily_price", "monthly_price", "description",
-            "facility_ids", "uploaded_images"
+            "facility", "images", "deleted_images", "deleted_facilities"
         ]
+
+    def to_internal_value(self, data):
+        """
+        Handle both JSON (dict) and Form (QueryDict) data.
+        Ensures multi-value fields are correctly extracted and filters out 
+        empty values that cause validation errors in integer fields.
+        """
+        is_querydict = hasattr(data, 'getlist')
+        
+        # Create a mutable copy without triggering deepcopy on files
+        if is_querydict:
+            processed_data = data.dict()
+        else:
+            processed_data = data.copy() if hasattr(data, 'copy') else dict(data)
+
+        # Fields that must be handled as lists
+        list_fields = ["facility", "images", "deleted_images", "deleted_facilities"]
+
+        for field_name in list_fields:
+            if field_name in data:
+                # Get the raw value correctly based on input type
+                raw_value = data.getlist(field_name) if is_querydict else data[field_name]
+                
+                # Normalize raw_value to a list of strings/objects
+                if isinstance(raw_value, str) and "," in raw_value:
+                    processed_data[field_name] = [v.strip() for v in raw_value.split(",") if v.strip()]
+                elif isinstance(raw_value, list) and len(raw_value) == 1 and isinstance(raw_value[0], str) and "," in raw_value[0]:
+                    processed_data[field_name] = [v.strip() for v in raw_value[0].split(",") if v.strip()]
+                elif isinstance(raw_value, list):
+                    # Filter out empty strings and None which cause IntegerField validation errors
+                    processed_data[field_name] = [v for v in raw_value if v not in ["", None]]
+                elif raw_value not in ["", None]:
+                    processed_data[field_name] = [raw_value]
+                else:
+                    processed_data[field_name] = []
+        
+        return super().to_internal_value(processed_data)
 
     def validate_capacity(self, value):
         if value <= 0:
@@ -107,37 +157,42 @@ class RoomWriteSerializer(serializers.ModelSerializer):
         # In case of update, instance is available
         instance = self.instance
         
-        queryset = Room.objects.filter(hostel=hostel, room_number=room_number)
-        if instance:
-            queryset = queryset.exclude(pk=instance.pk)
-            
-        if queryset.exists():
-            raise serializers.ValidationError({
-                "room_number": f"Room number '{room_number}' already exists for this hostel."
-            })
+        if hostel and room_number:
+            queryset = Room.objects.filter(hostel=hostel, room_number=room_number)
+            if instance:
+                queryset = queryset.exclude(pk=instance.pk)
+                
+            if queryset.exists():
+                raise serializers.ValidationError({
+                    "room_number": f"Room number '{room_number}' already exists for this hostel."
+                })
             
         return data
 
     @transaction.atomic
     def create(self, validated_data):
-        facility_ids = validated_data.pop("facility_ids", [])
-        uploaded_images = validated_data.pop("uploaded_images", [])
+        facility = validated_data.pop("facility", [])
+        images = validated_data.pop("images", [])
+        
+        # RoomWriteSerializer doesn't expect deleted_ fields in create, but we pop them to be safe
+        validated_data.pop("deleted_images", None)
+        validated_data.pop("deleted_facilities", None)
         
         room = Room.objects.create(**validated_data)
 
-        # Bulk create relationship entries for performance
-        if facility_ids:
+        # Bulk create relationship entries
+        if facility:
             room_facilities = [
                 RoomFacility(room=room, facility_id=fid)
-                for fid in facility_ids
+                for fid in facility
             ]
             RoomFacility.objects.bulk_create(room_facilities)
 
         # Handle image uploads
-        if uploaded_images:
+        if images:
             room_images = [
                 RoomImage(room=room, image=img)
-                for img in uploaded_images
+                for img in images
             ]
             RoomImage.objects.bulk_create(room_images)
 
@@ -145,30 +200,50 @@ class RoomWriteSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def update(self, instance, validated_data):
-        facility_ids = validated_data.pop("facility_ids", None)
-        uploaded_images = validated_data.pop("uploaded_images", None)
+        facility_ids = validated_data.pop("facility", None)
+        images = validated_data.pop("images", None)
+        deleted_images = validated_data.pop("deleted_images", [])
+        deleted_facilities = validated_data.pop("deleted_facilities", [])
 
         # Update base fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
 
-        # Update Facilities (Sync logic)
-        if facility_ids is not None:
-            # Simple replace logic for facilities
-            instance.room_facilities.all().delete()
-            room_facilities = [
-                RoomFacility(room=instance, facility_id=fid)
-                for fid in facility_ids
-            ]
-            RoomFacility.objects.bulk_create(room_facilities)
+        # Handle Selective Deletions
+        if deleted_images:
+            deleted_count, _ = RoomImage.objects.filter(
+                id__in=deleted_images,
+                room=instance
+            ).delete()
 
-        # Append new images (standard behavior for multiple uploads)
-        if uploaded_images:
+        if deleted_facilities:
+            deleted_count, _ = RoomFacility.objects.filter(
+                facility_id__in=deleted_facilities, 
+                room=instance
+            ).delete()
+
+        # Add new Facilities (Avoid duplicates)
+        if facility_ids is not None:
+            existing_fids = set(instance.room_facilities.values_list('facility_id', flat=True))
+            new_fids = [fid for fid in facility_ids if fid not in existing_fids]
+            
+            if new_fids:
+                room_facilities = [
+                    RoomFacility(room=instance, facility_id=fid)
+                    for fid in new_fids
+                ]
+                RoomFacility.objects.bulk_create(room_facilities)
+
+        # Append new images
+        if images:
             room_images = [
                 RoomImage(room=instance, image=img)
-                for img in uploaded_images
+                for img in images
             ]
             RoomImage.objects.bulk_create(room_images)
 
         return instance
+
+    def to_representation(self, instance):
+        return RoomReadSerializer(instance, context=self.context).data

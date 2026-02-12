@@ -5,7 +5,7 @@ from rooms.serializers import RoomReadSerializer
 from mess.serializers import MessMenuSerializer
 from mess.models import MessMenu
 from django.contrib.contenttypes.models import ContentType
-from django.db import transaction
+from django.db import models, transaction
 import json
 
 
@@ -104,11 +104,18 @@ class HostelCreateUpdateSerializer(serializers.ModelSerializer):
     rooms = serializers.CharField(write_only=True, required=True)
     mess = serializers.CharField(write_only=True, required=True)
 
+    # Deletion fields (sent as JSON array of IDs)
+    delete_images = serializers.CharField(write_only=True, required=False)
+    delete_rooms = serializers.CharField(write_only=True, required=False)
+    delete_mess = serializers.CharField(write_only=True, required=False)
+    delete_rules = serializers.CharField(write_only=True, required=False)
+    delete_facilities = serializers.CharField(write_only=True, required=False)
+
     # Image uploads
     images = serializers.ListField(
         child=serializers.ImageField(),
         write_only=True,
-        required=True
+        
     )
 
     class Meta:
@@ -118,6 +125,7 @@ class HostelCreateUpdateSerializer(serializers.ModelSerializer):
             "city", "state", "pincode",
             "hostel_type", "latitude", "longitude",
             "facilities", "rules", "rooms", "mess",
+            "delete_images", "delete_rooms", "delete_mess","delete_rules", "delete_facilities",
             "images",
         ]
 
@@ -195,9 +203,20 @@ class HostelCreateUpdateSerializer(serializers.ModelSerializer):
     def validate_mess(self, value):
         return self._parse_json(value, "mess")
 
-    # ======================================================
-    # 🧱 CREATE
-    # ======================================================
+    def validate_delete_images(self, value):
+        return self._parse_int_list(value, "delete_images")
+
+    def validate_delete_rooms(self, value):
+        return self._parse_int_list(value, "delete_rooms")
+
+    def validate_delete_mess(self, value):
+        return self._parse_int_list(value, "delete_mess")
+    
+    def validate_delete_rules(self, value):
+        return self._parse_int_list(value, "delete_rules")
+
+    def validate_delete_facilities(self, value):
+        return self._parse_int_list(value, "delete_facilities")
 
     @transaction.atomic
     def create(self, validated_data):
@@ -289,6 +308,12 @@ class HostelCreateUpdateSerializer(serializers.ModelSerializer):
         mess = validated_data.pop("mess", None)
         images = validated_data.pop("images", None)
 
+        delete_images = validated_data.pop("delete_images", [])
+        delete_rooms = validated_data.pop("delete_rooms", [])
+        delete_mess = validated_data.pop("delete_mess", [])
+        delete_rules = validated_data.pop("delete_rules", [])
+        delete_facilities = validated_data.pop("delete_facilities", [])
+
         # ------------------ Update base hostel fields ------------------
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
@@ -374,6 +399,49 @@ class HostelCreateUpdateSerializer(serializers.ModelSerializer):
                 HostelImage(hostel=instance, image=image)
                 for image in images
             ])
+
+        # ======================================================
+        # 🗑️ DELETIONS (SELECTIVE)
+        # ======================================================
+        
+        if delete_images:
+            HostelImage.objects.filter(
+                hostel=instance, 
+                id__in=delete_images
+            ).delete()
+
+        if delete_rooms:
+            # We need to recalculate capacity after deletion if we were keeping rooms,
+            # but current logic WIPES AND RECREATES rooms if 'rooms' is provided.
+            # If 'rooms' is NOT provided but 'delete_rooms' IS, we delete specifically.
+            Room.objects.filter(
+                hostel=instance, 
+                id__in=delete_rooms
+            ).delete()
+            
+            # Recalculate if we deleted rooms but didn't provide new ones
+            if rooms is None:
+                instance.total_rooms_count = instance.rooms.count()
+                instance.available_rooms_count = instance.rooms.aggregate(
+                    total=models.Sum("capacity")
+                )["total"] or 0
+                instance.save(update_fields=["total_rooms_count", "available_rooms_count"])
+
+        if delete_mess:
+            content_type = ContentType.objects.get_for_model(Hostel)
+            MessMenu.objects.filter(
+                content_type=content_type,
+                object_id=instance.id,
+                id__in=delete_mess
+            ).delete()
+
+        if delete_rules:
+            print(f"Deleting rules with IDs: {delete_rules} for hostel {instance.id}")
+            HostelRule.objects.filter(hostel=instance, id__in=delete_rules).delete()
+
+        if delete_facilities:
+            print(f"Deleting facilities with IDs: {delete_facilities} for hostel {instance.id}")
+            HostelFacility.objects.filter(hostel=instance, id__in=delete_facilities).delete()
 
         return instance
 

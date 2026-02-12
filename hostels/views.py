@@ -36,7 +36,7 @@ class HostelViewSet(viewsets.ModelViewSet):
         JSONParser
     ]
 
-    pagination_class = StandardResultsSetPagination  # ✅ ADD THIS LINE
+    pagination_class = StandardResultsSetPagination  
 
     def get_queryset(self):
         queryset = Hostel.objects.filter(owner=self.request.user).select_related("owner").prefetch_related(
